@@ -21,7 +21,7 @@ Chay theo dung thu tu:
 | `LUONG` | `VARBINARY(MAX)` | Luong da ma hoa RSA_512 |
 | `TENDN` | `NVARCHAR(100)` | UNIQUE, NOT NULL |
 | `MATKHAU` | `VARBINARY(20)` | `SHA1(MK)` |
-| `PUBKEY` | `VARCHAR(20)` | UNIQUE, luon bang `MANV` |
+| `PUBKEY` | `VARCHAR(20)` | UNIQUE, luon = `MANV` |
 
 ### `dbo.LOP`
 
@@ -66,7 +66,7 @@ Chay theo dung thu tu:
 - `TENDN` trong `NHANVIEN` la unique.
 - `TENDN` trong `SINHVIEN` la unique.
 - `PUBKEY` luon bang `MANV`.
-- He thong chan xung dot cheo `MANV/TENDN` de tranh truy van mo ho.
+- Chan xung dot `MANV/TENDN` de tranh truy van ngu.
 
 ## 4) Stored procedure contract
 
