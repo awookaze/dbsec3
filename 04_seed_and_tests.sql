@@ -17,11 +17,11 @@ IF EXISTS (SELECT 1 FROM sys.asymmetric_keys WHERE name = 'NV15') DROP ASYMMETRI
 GO
 
 /* NHANVIEN (Generates RSA_2048 and SHA2_256 via SP) */
-EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV11', N'Nguyen Van An',  'nv11@fit.vn', 12000000, N'nvan',   N'mkNV11';
-EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV12', N'Tran Thi Binh',  'nv12@fit.vn', 13500000, N'tbinh',  N'mkNV12';
-EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV13', N'Le Quang Huy',   'nv13@fit.vn', 15000000, N'lqhuy',  N'mkNV13';
-EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV14', N'Pham Minh Khoa', 'nv14@fit.vn', 14200000, N'pmkhoa', N'mkNV14';
-EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV15', N'Vo Thanh Long',  'nv15@fit.vn', 12800000, N'vtlong', N'mkNV15';
+EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV11', N'Nguyen Van An',  'nv11@fit.vn', 12000000, N'nvan',   N'DbSec@P@ss01';
+EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV12', N'Tran Thi Binh',  'nv12@fit.vn', 13500000, N'tbinh',  N'DbSec@P@ss02';
+EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV13', N'Le Quang Huy',   'nv13@fit.vn', 15000000, N'lqhuy',  N'DbSec@P@ss03';
+EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV14', N'Pham Minh Khoa', 'nv14@fit.vn', 14200000, N'pmkhoa', N'DbSec@P@ss04';
+EXEC dbo.SP_INS_PUBLIC_NHANVIEN 'NV15', N'Vo Thanh Long',  'nv15@fit.vn', 12800000, N'vtlong', N'DbSec@P@ss05';
 GO
 
 /* LOP */
@@ -73,5 +73,5 @@ SELECT COUNT(*) AS SoDong_BANGDIEM FROM dbo.BANGDIEM;
 GO
 
 /* Test decryption via SP */
-EXEC dbo.SP_SEL_PUBLIC_NHANVIEN N'nvan', N'mkNV11';
+EXEC dbo.SP_SEL_PUBLIC_NHANVIEN N'nvan', N'DbSec@P@ss01';
 GO

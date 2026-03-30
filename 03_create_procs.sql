@@ -85,7 +85,7 @@ BEGIN
             BEGIN CATCH
 
             END CATCH
-        END
+        END;
 
         THROW;
     END CATCH
