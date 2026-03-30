@@ -159,3 +159,44 @@ GO
 -- EXEC dbo.SP_SEL_PUBLIC_NHANVIEN N'nvan', N'saiMK';
 GO
 ```
+
+## 8) ADD(d) - Stored procedure cho man hinh quan ly
+
+Da bo sung them trong `03_create_procs.sql` (co comment `ADD(d)`):
+
+- `dbo.SP_LOGIN_NHANVIEN`: Dang nhap theo `MANV, MATKHAU`.
+- `dbo.SP_LOP_LIST_BY_MANV`: Lay danh sach lop do nhan vien quan ly.
+- `dbo.SP_LOP_INSERT_BY_MANV`: Them lop moi, lop do nhan vien dang nhap quan ly.
+- `dbo.SP_LOP_UPDATE_BY_MANV`: Sua lop (chi lop thuoc nhan vien dang nhap).
+- `dbo.SP_LOP_DELETE_BY_MANV`: Xoa lop (chi lop thuoc nhan vien dang nhap, va chua co sinh vien).
+- `dbo.SP_SINHVIEN_LIST_BY_LOP_MANV`: Xem sinh vien cua lop thuoc nhan vien dang nhap.
+- `dbo.SP_SINHVIEN_INSERT_BY_MANV`: Them sinh vien vao lop nhan vien dang nhap quan ly.
+- `dbo.SP_SINHVIEN_UPDATE_BY_MANV`: Sua sinh vien trong pham vi lop nhan vien dang nhap quan ly.
+- `dbo.SP_SINHVIEN_DELETE_BY_MANV`: Xoa sinh vien trong pham vi lop nhan vien dang nhap quan ly.
+- `dbo.SP_BANGDIEM_UPSERT_BY_MANV`: Them/cap nhat diem thi, diem duoc ma hoa bang Public Key cua nhan vien dang nhap.
+- `dbo.SP_BANGDIEM_LIST_BY_MANV`: Xem bang diem da giai ma (trong pham vi lop quan ly).
+
+## 9) ADD(d) - Chuong trinh Python GUI
+
+Thu muc moi: `python_app/`
+
+- `python_app/app.py`: Man hinh dang nhap + quan ly lop + quan ly sinh vien theo lop + nhap bang diem.
+- `python_app/requirements.txt`: Dependency Python.
+
+### Cai dat
+
+```bash
+cd dbsec3/python_app
+pip install -r requirements.txt
+```
+
+### Chay
+
+```bash
+python app.py
+```
+
+Luu y:
+
+- Chinh sua bien `CONN_STR` trong `python_app/app.py` theo SQL Server tren may ban.
+- App su dung cac SP trong `03_create_procs.sql`, can chay day du script SQL truoc.

@@ -75,3 +75,23 @@ GO
 /* Test decryption via SP */
 EXEC dbo.SP_SEL_PUBLIC_NHANVIEN N'nvan', N'DbSec@P@ss01';
 GO
+
+/* ADD(d): Test dang nhap */
+EXEC dbo.SP_LOGIN_NHANVIEN 'NV11', N'DbSec@P@ss01';
+GO
+
+/* ADD(d): Test xem lop cua nhan vien */
+EXEC dbo.SP_LOP_LIST_BY_MANV 'NV11';
+GO
+
+/* ADD(d): Test xem sinh vien theo lop (lop do NV11 quan ly) */
+EXEC dbo.SP_SINHVIEN_LIST_BY_LOP_MANV 'NV11', 'L01';
+GO
+
+/* ADD(d): Test cap nhat diem thi ma hoa bang Public Key NV11 */
+EXEC dbo.SP_BANGDIEM_UPSERT_BY_MANV 'NV11', 'SV01', 'HP01', 9.25;
+GO
+
+/* ADD(d): Test xem bang diem da giai ma */
+EXEC dbo.SP_BANGDIEM_LIST_BY_MANV 'NV11', N'DbSec@P@ss01', 'L01';
+GO
