@@ -4,7 +4,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.SP_INS_PUBLIC_NHANVIEN
     @MANV       VARCHAR(20),
     @HOTEN      NVARCHAR(100),
-    @EMAIL      VARCHAR(50),
+    @EMAIL      VARCHAR(20),
     @LUONGCB    BIGINT,
     @TENDN      NVARCHAR(100),
     @MK         NVARCHAR(128)
@@ -109,7 +109,7 @@ BEGIN
     (
         MANV    VARCHAR(20),
         HOTEN   NVARCHAR(100),
-        EMAIL   VARCHAR(50),
+        EMAIL   VARCHAR(20),
         PUBKEY  VARCHAR(20),
         LUONG   VARBINARY(MAX)
     );
@@ -131,7 +131,7 @@ BEGIN
     DECLARE
         @MANV       VARCHAR(20),
         @HOTEN      NVARCHAR(100),
-        @EMAIL      VARCHAR(50),
+        @EMAIL      VARCHAR(20),
         @PUBKEY     VARCHAR(20),
         @LUONG      VARBINARY(MAX),
         @LUONG_GM   VARBINARY(8000);

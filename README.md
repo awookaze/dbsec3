@@ -17,7 +17,7 @@ Chay theo dung thu tu:
 |---|---|---|
 | `MANV` | `VARCHAR(20)` | PK |
 | `HOTEN` | `NVARCHAR(100)` | NOT NULL |
-| `EMAIL` | `VARCHAR(50)` | NULL |
+| `EMAIL` | `VARCHAR(20)` | NULL |
 | `LUONG` | `VARBINARY(MAX)` | Luong da ma hoa RSA_2048 |
 | `TENDN` | `NVARCHAR(100)` | UNIQUE, NOT NULL |
 | `MATKHAU` | `VARBINARY(32)` | `SHA2_256(MK)` |
@@ -76,7 +76,7 @@ Input:
 
 - `@MANV VARCHAR(20)`
 - `@HOTEN NVARCHAR(100)`
-- `@EMAIL VARCHAR(50)`
+- `@EMAIL VARCHAR(20)`
 - `@LUONGCB BIGINT`
 - `@TENDN NVARCHAR(100)`
 - `@MK NVARCHAR(128)`
