@@ -1,7 +1,7 @@
 USE QLSVNhom;
 GO
 
-/* 1. INSERT NHANVIEN (Bao gồm VAITRO) */
+/* 1) INSERT NHANVIEN (client da hash/encrypt san) */
 CREATE OR ALTER PROCEDURE dbo.SP_INS_PUBLIC_ENCRYPT_NHANVIEN
     @MANV       VARCHAR(20),
     @HOTEN      NVARCHAR(100),
@@ -16,61 +16,208 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    IF EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE MANV = @MANV OR TENDN = @MANV)
-        THROW 50007, N'MANV đã tồn tại hoặc bị xung đột với TENDN hiện có.', 1;
+    IF EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE MANV = @MANV)
+        THROW 50007, N'MANV da ton tai.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE TENDN = @TENDN)
+        THROW 50008, N'TENDN da ton tai.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE PUBKEY = @PUB)
+        THROW 50009, N'PUBKEY da duoc su dung.', 1;
+
+    IF @VAITRO NOT IN ('ADMIN', 'USER')
+        THROW 50010, N'VAITRO chi duoc ADMIN hoac USER.', 1;
 
     DECLARE @MK_BIN VARBINARY(64) = TRY_CONVERT(VARBINARY(64), @MK, 2);
+    IF @MK_BIN IS NULL OR DATALENGTH(@MK_BIN) <> 64
+        THROW 50011, N'MK phai la SHA-512 hex string hop le.', 1;
 
     INSERT INTO dbo.NHANVIEN (MANV, HOTEN, EMAIL, LUONG, TENDN, MATKHAU, PUBKEY, VAITRO)
     VALUES (@MANV, @HOTEN, @EMAIL, @LUONG, @TENDN, @MK_BIN, @PUB, @VAITRO);
 END
 GO
 
-/* 2. SELECT NHANVIEN */
+/* 2) LOGIN bang TENDN/MANV + MK hash */
 CREATE OR ALTER PROCEDURE dbo.SP_SEL_PUBLIC_ENCRYPT_NHANVIEN
     @TENDN    NVARCHAR(100),
     @MK       VARCHAR(128)
 AS
 BEGIN
     SET NOCOUNT ON;
-    DECLARE @MK_BIN VARBINARY(64) = TRY_CONVERT(VARBINARY(64), @MK, 2);
 
-    SELECT TOP (1) MANV, HOTEN, EMAIL, LUONG, VAITRO
+    DECLARE @MK_BIN VARBINARY(64) = TRY_CONVERT(VARBINARY(64), @MK, 2);
+    IF @MK_BIN IS NULL OR DATALENGTH(@MK_BIN) <> 64
+        THROW 50012, N'MK phai la SHA-512 hex string hop le.', 1;
+
+    SELECT TOP (1)
+        MANV,
+        HOTEN,
+        EMAIL,
+        LUONG,
+        TENDN,
+        PUBKEY,
+        VAITRO
     FROM dbo.NHANVIEN
-    WHERE (TENDN = @TENDN OR MANV = @TENDN) AND MATKHAU = @MK_BIN;
-    
+    WHERE (TENDN = @TENDN OR MANV = @TENDN)
+      AND MATKHAU = @MK_BIN;
+
     IF @@ROWCOUNT = 0
-        THROW 50013, N'Sai thông tin đăng nhập hoặc không tìm thấy nhân viên.', 1;
+        THROW 50013, N'Sai thong tin dang nhap hoac khong tim thay nhan vien.', 1;
 END
 GO
 
-/* 3. CẬP NHẬT THÔNG TIN NHÂN VIÊN (KHÔNG ĐỔI MẬT KHẨU) */
+/* 3) Wrapper login (giu tuong thich app cu) */
+CREATE OR ALTER PROCEDURE dbo.SP_LOGIN_NHANVIEN_CLIENT
+    @MANV   VARCHAR(20),
+    @MK     VARCHAR(128)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC dbo.SP_SEL_PUBLIC_ENCRYPT_NHANVIEN @TENDN = @MANV, @MK = @MK;
+END
+GO
+
+/* 4) Danh sach nhan vien */
+CREATE OR ALTER PROCEDURE dbo.SP_NHANVIEN_LIST
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT MANV, HOTEN, EMAIL, LUONG, TENDN, PUBKEY, VAITRO
+    FROM dbo.NHANVIEN
+    ORDER BY MANV;
+END
+GO
+
+/* 5) Cap nhat thong tin nhan vien (ADMIN sua moi tai khoan, USER chi sua chinh minh) */
+CREATE OR ALTER PROCEDURE dbo.SP_NHANVIEN_UPDATE_CLIENT
+    @ACTION_MANV VARCHAR(20),
+    @MANV        VARCHAR(20),
+    @HOTEN       NVARCHAR(100),
+    @EMAIL       VARCHAR(100),
+    @LUONG       VARCHAR(500),
+    @TENDN       NVARCHAR(100),
+    @MK          VARCHAR(128) = NULL,
+    @PUB         VARCHAR(500),
+    @VAITRO      VARCHAR(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ACTION_ROLE VARCHAR(20);
+    SELECT @ACTION_ROLE = VAITRO FROM dbo.NHANVIEN WHERE MANV = @ACTION_MANV;
+
+    IF @ACTION_ROLE IS NULL
+        THROW 51001, N'Nguoi dung thuc hien khong ton tai.', 1;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE MANV = @MANV)
+        THROW 51005, N'Nhan vien khong ton tai.', 1;
+
+    IF @ACTION_ROLE <> 'ADMIN' AND @ACTION_MANV <> @MANV
+        THROW 51017, N'Tu choi truy cap: khong co quyen sua nhan vien khac.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE TENDN = @TENDN AND MANV <> @MANV)
+        THROW 51006, N'TENDN da ton tai.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE PUBKEY = @PUB AND MANV <> @MANV)
+        THROW 51007, N'PUBKEY da duoc su dung.', 1;
+
+    DECLARE @MK_BIN VARBINARY(64) = NULL;
+    IF NULLIF(LTRIM(RTRIM(@MK)), '') IS NOT NULL
+    BEGIN
+        SET @MK_BIN = TRY_CONVERT(VARBINARY(64), @MK, 2);
+        IF @MK_BIN IS NULL OR DATALENGTH(@MK_BIN) <> 64
+            THROW 51010, N'MK phai la SHA-512 hex string hop le.', 1;
+    END
+
+    DECLARE @TARGET_ROLE VARCHAR(20);
+    SELECT @TARGET_ROLE = VAITRO FROM dbo.NHANVIEN WHERE MANV = @MANV;
+
+    IF @ACTION_ROLE = 'ADMIN'
+    BEGIN
+        IF @VAITRO IS NOT NULL AND @VAITRO NOT IN ('ADMIN', 'USER')
+            THROW 51032, N'VAITRO chi duoc ADMIN hoac USER.', 1;
+
+        UPDATE dbo.NHANVIEN
+        SET HOTEN = @HOTEN,
+            EMAIL = @EMAIL,
+            LUONG = @LUONG,
+            TENDN = @TENDN,
+            PUBKEY = @PUB,
+            MATKHAU = CASE WHEN @MK_BIN IS NULL THEN MATKHAU ELSE @MK_BIN END,
+            VAITRO = CASE WHEN @VAITRO IS NULL THEN VAITRO ELSE @VAITRO END
+        WHERE MANV = @MANV;
+    END
+    ELSE
+    BEGIN
+        -- USER khong duoc doi role
+        UPDATE dbo.NHANVIEN
+        SET HOTEN = @HOTEN,
+            EMAIL = @EMAIL,
+            LUONG = @LUONG,
+            TENDN = @TENDN,
+            PUBKEY = @PUB,
+            MATKHAU = CASE WHEN @MK_BIN IS NULL THEN MATKHAU ELSE @MK_BIN END,
+            VAITRO = @TARGET_ROLE
+        WHERE MANV = @MANV;
+    END
+END
+GO
+
+/* 6) Xoa nhan vien (ADMIN) */
+CREATE OR ALTER PROCEDURE dbo.SP_NHANVIEN_DELETE
+    @ACTION_MANV VARCHAR(20),
+    @MANV        VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ACTION_ROLE VARCHAR(20);
+    SELECT @ACTION_ROLE = VAITRO FROM dbo.NHANVIEN WHERE MANV = @ACTION_MANV;
+
+    IF @ACTION_ROLE <> 'ADMIN'
+        THROW 51033, N'Chi ADMIN moi duoc xoa nhan vien.', 1;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE MANV = @MANV)
+        THROW 51011, N'Nhan vien khong ton tai.', 1;
+
+    IF @MANV = @ACTION_MANV
+        THROW 51034, N'Khong duoc tu xoa tai khoan dang dang nhap.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.LOP WHERE MANV = @MANV)
+        THROW 51012, N'Khong the xoa nhan vien dang quan ly lop.', 1;
+
+    DELETE FROM dbo.NHANVIEN WHERE MANV = @MANV;
+END
+GO
+
+/* 7) Cap nhat thong tin co ban (friend flow) */
 CREATE OR ALTER PROCEDURE dbo.SP_UPD_NHANVIEN_INFO
-    @ACTION_MANV    VARCHAR(20), -- User performing the action
-    @TARGET_MANV    VARCHAR(20), -- User being updated
+    @ACTION_MANV    VARCHAR(20),
+    @TARGET_MANV    VARCHAR(20),
     @NEW_HOTEN      NVARCHAR(100),
     @NEW_EMAIL      VARCHAR(100)
 AS
 BEGIN
     SET NOCOUNT ON;
-    
+
     DECLARE @ROLE VARCHAR(20);
     SELECT @ROLE = VAITRO FROM dbo.NHANVIEN WHERE MANV = @ACTION_MANV;
 
     IF @ROLE IS NULL
-        THROW 50016, N'Người dùng thực hiện không tồn tại.', 1;
+        THROW 50016, N'Nguoi dung thuc hien khong ton tai.', 1;
 
-    -- Chỉ ADMIN mới được sửa người khác. USER chỉ được sửa chính mình.
     IF @ROLE <> 'ADMIN' AND @ACTION_MANV <> @TARGET_MANV
-        THROW 50017, N'Từ chối truy cập: Không có quyền sửa thông tin nhân viên khác.', 1;
+        THROW 50017, N'Tu choi truy cap: khong co quyen sua thong tin nhan vien khac.', 1;
 
     UPDATE dbo.NHANVIEN
-    SET HOTEN = @NEW_HOTEN, EMAIL = @NEW_EMAIL
+    SET HOTEN = @NEW_HOTEN,
+        EMAIL = @NEW_EMAIL
     WHERE MANV = @TARGET_MANV;
 END
 GO
 
-/* 4. USER TỰ ĐỔI MẬT KHẨU (Yêu cầu mật khẩu cũ để map với Client Pipeline) */
+/* 8) Doi mat khau nhan vien (friend flow) */
 CREATE OR ALTER PROCEDURE dbo.SP_CHANGE_PASSWORD_NHANVIEN
     @MANV           VARCHAR(20),
     @OLD_MK_HASH    VARCHAR(128),
@@ -80,16 +227,283 @@ CREATE OR ALTER PROCEDURE dbo.SP_CHANGE_PASSWORD_NHANVIEN
 AS
 BEGIN
     SET NOCOUNT ON;
+
     DECLARE @OLD_MK_BIN VARBINARY(64) = TRY_CONVERT(VARBINARY(64), @OLD_MK_HASH, 2);
     DECLARE @NEW_MK_BIN VARBINARY(64) = TRY_CONVERT(VARBINARY(64), @NEW_MK_HASH, 2);
 
+    IF @OLD_MK_BIN IS NULL OR DATALENGTH(@OLD_MK_BIN) <> 64
+        THROW 50014, N'OLD_MK_HASH khong hop le.', 1;
+
+    IF @NEW_MK_BIN IS NULL OR DATALENGTH(@NEW_MK_BIN) <> 64
+        THROW 50018, N'NEW_MK_HASH khong hop le.', 1;
+
     IF NOT EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE MANV = @MANV AND MATKHAU = @OLD_MK_BIN)
-        THROW 50015, N'Mật khẩu cũ không chính xác.', 1;
+        THROW 50015, N'Mat khau cu khong chinh xac.', 1;
 
     UPDATE dbo.NHANVIEN
     SET MATKHAU = @NEW_MK_BIN,
         PUBKEY = @NEW_PUBKEY,
         LUONG = @NEW_LUONG
     WHERE MANV = @MANV;
+END
+GO
+
+/* 9) Quan ly lop theo MANV */
+CREATE OR ALTER PROCEDURE dbo.SP_LOP_LIST_BY_MANV
+    @MANV VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT MALOP, TENLOP, MANV
+    FROM dbo.LOP
+    WHERE MANV = @MANV
+    ORDER BY MALOP;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_LOP_INSERT_BY_MANV
+    @MANV   VARCHAR(20),
+    @MALOP  VARCHAR(20),
+    @TENLOP NVARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.NHANVIEN WHERE MANV = @MANV)
+        THROW 51013, N'Nhan vien khong ton tai.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.LOP WHERE MALOP = @MALOP)
+        THROW 51014, N'MALOP da ton tai.', 1;
+
+    INSERT INTO dbo.LOP (MALOP, TENLOP, MANV)
+    VALUES (@MALOP, @TENLOP, @MANV);
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_LOP_UPDATE_BY_MANV
+    @MANV   VARCHAR(20),
+    @MALOP  VARCHAR(20),
+    @TENLOP NVARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.LOP WHERE MALOP = @MALOP AND MANV = @MANV)
+        THROW 51015, N'Ban chi duoc sua lop do minh quan ly.', 1;
+
+    UPDATE dbo.LOP
+    SET TENLOP = @TENLOP
+    WHERE MALOP = @MALOP
+      AND MANV = @MANV;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_LOP_DELETE_BY_MANV
+    @MANV   VARCHAR(20),
+    @MALOP  VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.LOP WHERE MALOP = @MALOP AND MANV = @MANV)
+        THROW 51016, N'Ban chi duoc xoa lop do minh quan ly.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.SINHVIEN WHERE MALOP = @MALOP)
+        THROW 51017, N'Khong the xoa lop da co sinh vien.', 1;
+
+    DELETE FROM dbo.LOP
+    WHERE MALOP = @MALOP
+      AND MANV = @MANV;
+END
+GO
+
+/* 10) Quan ly sinh vien theo lop thuoc MANV */
+CREATE OR ALTER PROCEDURE dbo.SP_SINHVIEN_LIST_BY_LOP_MANV
+    @MANV   VARCHAR(20),
+    @MALOP  VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.LOP WHERE MALOP = @MALOP AND MANV = @MANV)
+        THROW 51018, N'Ban chi duoc xem sinh vien cua lop minh quan ly.', 1;
+
+    SELECT MASV, HOTEN, NGAYSINH, DIACHI, MALOP, TENDN
+    FROM dbo.SINHVIEN
+    WHERE MALOP = @MALOP
+    ORDER BY MASV;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_SINHVIEN_INSERT_BY_MANV
+    @MANV      VARCHAR(20),
+    @MASV      VARCHAR(20),
+    @HOTEN     NVARCHAR(100),
+    @NGAYSINH  DATETIME,
+    @DIACHI    NVARCHAR(200),
+    @MALOP     VARCHAR(20),
+    @TENDN     NVARCHAR(100),
+    @MK        VARCHAR(128)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.LOP WHERE MALOP = @MALOP AND MANV = @MANV)
+        THROW 51019, N'Ban chi duoc them sinh vien vao lop minh quan ly.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.SINHVIEN WHERE MASV = @MASV)
+        THROW 51020, N'MASV da ton tai.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.SINHVIEN WHERE TENDN = @TENDN)
+        THROW 51021, N'TENDN da ton tai.', 1;
+
+    DECLARE @MK_BIN VARBINARY(64) = TRY_CONVERT(VARBINARY(64), @MK, 2);
+    IF @MK_BIN IS NULL OR DATALENGTH(@MK_BIN) <> 64
+        THROW 51022, N'MK phai la SHA-512 hex string hop le.', 1;
+
+    INSERT INTO dbo.SINHVIEN (MASV, HOTEN, NGAYSINH, DIACHI, MALOP, TENDN, MATKHAU)
+    VALUES (@MASV, @HOTEN, @NGAYSINH, @DIACHI, @MALOP, @TENDN, @MK_BIN);
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_SINHVIEN_UPDATE_BY_MANV
+    @MANV      VARCHAR(20),
+    @MASV      VARCHAR(20),
+    @HOTEN     NVARCHAR(100),
+    @NGAYSINH  DATETIME,
+    @DIACHI    NVARCHAR(200),
+    @MALOP     VARCHAR(20),
+    @TENDN     NVARCHAR(100),
+    @MK        VARCHAR(128) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.SINHVIEN s
+        JOIN dbo.LOP l ON l.MALOP = s.MALOP
+        WHERE s.MASV = @MASV AND l.MANV = @MANV
+    )
+        THROW 51023, N'Chi duoc sua sinh vien thuoc lop minh quan ly.', 1;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.LOP WHERE MALOP = @MALOP AND MANV = @MANV)
+        THROW 51024, N'Khong duoc chuyen sinh vien sang lop ngoai pham vi quan ly.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.SINHVIEN WHERE TENDN = @TENDN AND MASV <> @MASV)
+        THROW 51025, N'TENDN da ton tai.', 1;
+
+    DECLARE @MK_BIN VARBINARY(64) = NULL;
+    IF NULLIF(LTRIM(RTRIM(@MK)), '') IS NOT NULL
+    BEGIN
+        SET @MK_BIN = TRY_CONVERT(VARBINARY(64), @MK, 2);
+        IF @MK_BIN IS NULL OR DATALENGTH(@MK_BIN) <> 64
+            THROW 51026, N'MK phai la SHA-512 hex string hop le.', 1;
+    END
+
+    UPDATE dbo.SINHVIEN
+    SET HOTEN = @HOTEN,
+        NGAYSINH = @NGAYSINH,
+        DIACHI = @DIACHI,
+        MALOP = @MALOP,
+        TENDN = @TENDN,
+        MATKHAU = CASE WHEN @MK_BIN IS NULL THEN MATKHAU ELSE @MK_BIN END
+    WHERE MASV = @MASV;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_SINHVIEN_DELETE_BY_MANV
+    @MANV   VARCHAR(20),
+    @MASV   VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.SINHVIEN s
+        JOIN dbo.LOP l ON l.MALOP = s.MALOP
+        WHERE s.MASV = @MASV AND l.MANV = @MANV
+    )
+        THROW 51027, N'Chi duoc xoa sinh vien thuoc lop minh quan ly.', 1;
+
+    DELETE FROM dbo.BANGDIEM WHERE MASV = @MASV;
+    DELETE FROM dbo.SINHVIEN WHERE MASV = @MASV;
+END
+GO
+
+/* 11) Hoc phan */
+CREATE OR ALTER PROCEDURE dbo.SP_HOCPHAN_LIST
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT MAHP, TENHP, SOTC
+    FROM dbo.HOCPHAN
+    ORDER BY MAHP;
+END
+GO
+
+/* 12) Bang diem (ciphertext thao tac o client) */
+CREATE OR ALTER PROCEDURE dbo.SP_BANGDIEM_UPSERT_BY_MANV_CLIENT
+    @MANV      VARCHAR(20),
+    @MASV      VARCHAR(20),
+    @MAHP      VARCHAR(20),
+    @DIEMTHI   VARCHAR(500)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NULLIF(LTRIM(RTRIM(@DIEMTHI)), '') IS NULL
+        THROW 51028, N'DIEMTHI ma hoa khong duoc rong.', 1;
+
+    IF NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.SINHVIEN s
+        JOIN dbo.LOP l ON l.MALOP = s.MALOP
+        WHERE s.MASV = @MASV AND l.MANV = @MANV
+    )
+        THROW 51029, N'Chi duoc nhap diem cho sinh vien thuoc lop minh quan ly.', 1;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.HOCPHAN WHERE MAHP = @MAHP)
+        THROW 51030, N'MAHP khong ton tai.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.BANGDIEM WHERE MASV = @MASV AND MAHP = @MAHP)
+    BEGIN
+        UPDATE dbo.BANGDIEM
+        SET DIEMTHI = @DIEMTHI
+        WHERE MASV = @MASV AND MAHP = @MAHP;
+    END
+    ELSE
+    BEGIN
+        INSERT INTO dbo.BANGDIEM (MASV, MAHP, DIEMTHI)
+        VALUES (@MASV, @MAHP, @DIEMTHI);
+    END
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_BANGDIEM_LIST_BY_LOP_MANV_CLIENT
+    @MANV      VARCHAR(20),
+    @MALOP     VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.LOP WHERE MALOP = @MALOP AND MANV = @MANV)
+        THROW 51031, N'Ban chi duoc xem diem cua lop minh quan ly.', 1;
+
+    SELECT
+        s.MASV,
+        s.HOTEN,
+        b.MAHP,
+        b.DIEMTHI
+    FROM dbo.BANGDIEM b
+    JOIN dbo.SINHVIEN s ON s.MASV = b.MASV
+    WHERE s.MALOP = @MALOP
+    ORDER BY s.MASV, b.MAHP;
 END
 GO
