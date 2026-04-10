@@ -1,7 +1,7 @@
 """
 security_utils.py
 -----------------
-- Mật khẩu tạo seed SHA-512.
+- Mật khẩu + MANV tạo seed SHA-512 (MANV đóng vai trò như Salt).
 - Seed chạy qua ChaCha20 tạo luồng random vô tận để feed vào RSA.generate.
 - Export public key để lưu DB.
 - Hỗ trợ Pipeline đổi mật khẩu.
@@ -21,12 +21,14 @@ def sha512_hex(plain_text: str) -> str:
     """Hash chuỗi bằng SHA-512 và trả về hex string viết hoa (128 ký tự)."""
     return hashlib.sha512(plain_text.encode("utf-8")).hexdigest().upper()
 
-def get_deterministic_randfunc(password: str):
+def get_deterministic_randfunc(password: str, manv: str):
     """
-    SHA-512 tạo seed, bơm vào ChaCha20
-    để tạo hàm pseudo-random cung cấp cho thư viện RSA
+    Kết hợp Mật khẩu + MANV (Salt) -> SHA-512 tạo seed, 
+    bơm vào ChaCha20 để tạo hàm pseudo-random cho thư viện RSA
     """
-    seed_bytes = hashlib.sha512(password.encode("utf-8")).digest() # 64 bytes
+    # Nối password và manv lại với nhau để làm hạt giống
+    combined_material = f"{password}{manv}"
+    seed_bytes = hashlib.sha512(combined_material.encode("utf-8")).digest() # 64 bytes
     
     key = seed_bytes[:32]      # 256-bit key cho ChaCha20
     nonce = seed_bytes[32:40]  # 64-bit nonce cho ChaCha20
@@ -40,9 +42,9 @@ def get_deterministic_randfunc(password: str):
 
     return randfunc
 
-def generate_deterministic_rsa_keypair(password: str, bits: int = 2048) -> RSA.RsaKey:
-    """Tạo khóa RSA cố định (deterministic) dựa trên password."""
-    randfunc = get_deterministic_randfunc(password)
+def generate_deterministic_rsa_keypair(password: str, manv: str, bits: int = 2048) -> RSA.RsaKey:
+    """Tạo khóa RSA cố định (deterministic) dựa trên password và MANV."""
+    randfunc = get_deterministic_randfunc(password, manv)
     # RSA.generate sẽ cắt tuần tự luồng byte từ randfunc để tìm p và q
     key = RSA.generate(bits, randfunc=randfunc)
     return key
@@ -66,7 +68,8 @@ def build_insert_nhanvien_payload(
     manv: str, hoten: str, email: str, luongcb: str, tendn: str, matkhau_plain: str, vaitro: str
 ) -> Dict[str, str]:
     """Tạo payload gọi SP_INS_PUBLIC_ENCRYPT_NHANVIEN"""
-    rsa_key = generate_deterministic_rsa_keypair(matkhau_plain)
+    # Truyền thêm manv vào hàm tạo key
+    rsa_key = generate_deterministic_rsa_keypair(matkhau_plain, manv)
     public_pem = rsa_key.publickey().export_key().decode("utf-8")
 
     return {
@@ -88,12 +91,12 @@ def build_change_password_payload(
     1. Lấy khóa cũ -> Giải mã lương. 
     2. Tạo khóa mới -> Mã hóa lại lương.
     """
-    # 1. Giải mã bằng Private Key cũ
-    old_key = generate_deterministic_rsa_keypair(old_password)
+    # 1. Giải mã bằng Private Key cũ (Cần truyền manv)
+    old_key = generate_deterministic_rsa_keypair(old_password, manv)
     luong_plain = rsa_decrypt_b64_to_text(encrypted_luong_b64_from_db, old_key)
 
-    # 2. Tạo Private/Public Key mới và mã hóa lại lương
-    new_key = generate_deterministic_rsa_keypair(new_password)
+    # 2. Tạo Private/Public Key mới (Cần truyền manv) và mã hóa lại lương
+    new_key = generate_deterministic_rsa_keypair(new_password, manv)
     new_luong_b64 = rsa_encrypt_text_to_b64(luong_plain, new_key)
     new_pub_pem = new_key.publickey().export_key().decode("utf-8")
 
